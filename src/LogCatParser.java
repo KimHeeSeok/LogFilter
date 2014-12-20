@@ -16,6 +16,7 @@ public class LogCatParser implements ILogParser
     final String TOKEN       = "/()";
     final String TOKEN_PID   = "/() ";
     final String TOKEN_MESSAGE = "'";
+    final String TOKEN_TAG= ":";
     
     public Color getColor(LogInfo logInfo)
     {
@@ -126,7 +127,7 @@ public class LogCatParser implements ILogParser
         if(stk.hasMoreElements())
             logInfo.m_strLogLV = stk.nextToken().trim();
         if(stk.hasMoreElements())
-            logInfo.m_strTag = stk.nextToken();
+            logInfo.m_strTag = stk.nextToken(TOKEN_TAG);
         if(stk.hasMoreElements())
             logInfo.m_strPid = stk.nextToken().trim();
         if(stk.hasMoreElements())
@@ -158,7 +159,7 @@ public class LogCatParser implements ILogParser
         if(stk.hasMoreElements())
             logInfo.m_strLogLV = stk.nextToken().trim();
         if(stk.hasMoreElements())
-            logInfo.m_strTag = stk.nextToken();
+            logInfo.m_strTag = stk.nextToken(TOKEN_TAG);
         if(stk.hasMoreElements())
         {
             logInfo.m_strMessage = stk.nextToken(TOKEN_MESSAGE);
