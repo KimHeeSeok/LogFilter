@@ -1,9 +1,9 @@
 /**
- * 
+ *
  */
 
 /**
- * 
+ *
  */
 public interface INotiEvent
 {
@@ -15,14 +15,14 @@ public interface INotiEvent
     public static int EVENT_CHANGE_FILTER_REMOVE_WORD   = 5;
 
     void notiEvent(EventParam param);
-    
+
     class EventParam
     {
         int nEventId;
         Object param1;
         Object param2;
         Object param3;
-        
+
         public EventParam(int nEventId)
         {
             this.nEventId = nEventId;

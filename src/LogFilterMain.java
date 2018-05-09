@@ -31,6 +31,7 @@ import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
@@ -42,6 +43,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.StringTokenizer;
+import java.util.concurrent.TimeoutException;
 
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
@@ -74,7 +76,7 @@ import javax.swing.event.ListSelectionListener;
 public class LogFilterMain extends JFrame implements INotiEvent
 {
     private static final long serialVersionUID           = 1L;
-    
+
     static final String       LOGFILTER                  = "LogFilter";
     static final String       VERSION                    = "Version 1.8";
     final String              COMBO_ANDROID              = "Android          ";
@@ -88,28 +90,29 @@ public class LogFilterMain extends JFrame implements INotiEvent
 //    final String              ANDROID_EVENT_CMD          = "logcat -b events -v time ";
 //    final String              ANDROID_RADIO_CMD          = "logcat -b radio -v time          ";
 //    final String              ANDROID_CUSTOM_CMD         = "logcat ";
+    final String              ANDROID_PROCESS_LIST_CMD_FIRST  = "shell ps";
     final String              ANDROID_DEFAULT_CMD_FIRST  = "adb ";
     final String              ANDROID_SELECTED_CMD_FIRST = "adb -s ";
 //    final String              ANDROID_SELECTED_CMD_LAST  = " logcat -v time ";
     final String[]            DEVICES_CMD                = {"adb devices", "", ""};
-    
+
     static final int          DEFAULT_WIDTH              = 1200;
     static final int          DEFAULT_HEIGHT             = 720;
     static final int          MIN_WIDTH                  = 1100;
     static final int          MIN_HEIGHT                 = 500;
-    
+
     static final int          DEVICES_ANDROID            = 0;
     static final int          DEVICES_IOS                = 1;
     static final int          DEVICES_CUSTOM             = 2;
-    
+
     static final int          STATUS_CHANGE              = 1;
     static final int          STATUS_PARSING             = 2;
     static final int          STATUS_READY               = 4;
-    
+
     final int                 L                          = SwingConstants.LEFT;
     final int                 C                          = SwingConstants.CENTER;
     final int                 R                          = SwingConstants.RIGHT;
-    
+
     JTabbedPane               m_tpTab;
     JTextField                m_tfStatus;
     IndicatorPanel            m_ipIndicator;
@@ -128,16 +131,17 @@ public class LogFilterMain extends JFrame implements INotiEvent
     LogFilterTableModel       m_tmLogTableModel;
 //    TagFilterTableModel         m_tmTagTableModel;
     boolean                   m_bUserFilter;
-    
+
     //Word Filter, tag filter
     JTextField                m_tfHighlight;
     JTextField                m_tfFindWord;
     JTextField                m_tfRemoveWord;
     JTextField                m_tfShowTag;
     JTextField                m_tfRemoveTag;
+    JTextField                m_tfShowProcess;
     JTextField                m_tfShowPid;
     JTextField                m_tfShowTid;
-    
+
     //Device
     JButton                   m_btnDevice;
     JList                     m_lDeviceList;
@@ -150,6 +154,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
     JCheckBox                 m_chkEnableRemove;
     JCheckBox                 m_chkEnableShowTag;
     JCheckBox                 m_chkEnableRemoveTag;
+    JCheckBox                 m_chkEnableShowProcess;
     JCheckBox                 m_chkEnableShowPid;
     JCheckBox                 m_chkEnableShowTid;
     JCheckBox                 m_chkEnableHighlight;
@@ -161,18 +166,19 @@ public class LogFilterMain extends JFrame implements INotiEvent
     JCheckBox                 m_chkWarn;
     JCheckBox                 m_chkError;
     JCheckBox                 m_chkFatal;
-    
+
     //Show column
     JCheckBox                 m_chkClmBookmark;
     JCheckBox                 m_chkClmLine;
     JCheckBox                 m_chkClmDate;
     JCheckBox                 m_chkClmTime;
     JCheckBox                 m_chkClmLogLV;
+    JCheckBox                 m_chkClmProcess;
     JCheckBox                 m_chkClmPid;
     JCheckBox                 m_chkClmThread;
     JCheckBox                 m_chkClmTag;
     JCheckBox                 m_chkClmMessage;
-    
+
     JTextField                m_tfFontSize;
 //    JTextField                  m_tfProcessCmd;
     JComboBox                 m_comboEncode;
@@ -181,7 +187,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
     JButton                   m_btnClear;
     JToggleButton             m_tbtnPause;
     JButton                   m_btnStop;
-    
+
     String                    m_strLogFileName;
     String                    m_strSelectedDevice;
 //    String                      m_strProcessCmd;
@@ -189,8 +195,9 @@ public class LogFilterMain extends JFrame implements INotiEvent
     Thread                    m_thProcess;
     Thread                    m_thWatchFile;
     Thread                    m_thFilterParse;
+    Thread                    m_thProcessList;
     boolean                   m_bPauseADB;
-    
+
     Object                    FILE_LOCK;
     Object                    FILTER_LOCK;
     volatile int              m_nChangedFilter;
@@ -203,9 +210,13 @@ public class LogFilterMain extends JFrame implements INotiEvent
     static RecentFileMenu     m_recentMenu;
 //    String                    m_strLastDir;
 
+    HashMap<String, String>   m_ProcessMap;
+
     public static void main(final String args[])
     {
 //        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        System.out.println( "dir=" + new File("./").getAbsolutePath());
 
         final LogFilterMain mainFrame = new LogFilterMain();
         mainFrame.setTitle(LOGFILTER + " " + VERSION);
@@ -225,19 +236,19 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 mainFrame.openFileBrowser();
             }
         });
-        
+
         m_recentMenu = new RecentFileMenu("RecentFile",10){
             public void onSelectFile(String filePath){
                 mainFrame.parseFile(new File(filePath));
             }
         };
-        
+
         file.add(fileOpen);
         file.add(m_recentMenu);
 
         menubar.add(file);
         mainFrame.setJMenuBar(menubar);
-        
+
         if(args != null && args.length > 0)
         {
             EventQueue.invokeLater(new Runnable()
@@ -256,13 +267,14 @@ public class LogFilterMain extends JFrame implements INotiEvent
         SimpleDateFormat format = new SimpleDateFormat("yyyyMMdd_HHmmss");
         return "LogFilter_" + format.format(now) + ".txt";
     }
-    
+
     void exit()
     {
         if(m_Process != null) m_Process.destroy();
         if(m_thProcess != null) m_thProcess.interrupt();
         if(m_thWatchFile != null) m_thWatchFile.interrupt();
         if(m_thFilterParse != null) m_thFilterParse.interrupt();
+        if(m_thProcessList != null) m_thProcessList.interrupt();
 
         saveFilter();
         saveColor();
@@ -310,7 +322,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             setExtendedState( m_nWindState );
         setMinimumSize(new Dimension(MIN_WIDTH, MIN_HEIGHT));
     }
-    
+
     final String INI_FILE           = "LogFilter.ini";
     final String INI_FILE_CMD       = "LogFilterCmd.ini";
     final String INI_FILE_COLOR     = "LogFilterColor.ini";
@@ -323,6 +335,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
     final String INI_TAG_SHOW       = "TAG_SHOW";
     final String INI_TAG_REMOVE     = "TAG_REMOVE";
     final String INI_HIGHLIGHT      = "HIGHLIGHT";
+    final String INI_PROCESS_SHOW   = "PROCESS_SHOW";
     final String INI_PID_SHOW       = "PID_SHOW";
     final String INI_TID_SHOW       = "TID_SHOW";
     final String INI_COLOR_0        = "INI_COLOR_0";
@@ -341,16 +354,16 @@ public class LogFilterMain extends JFrame implements INotiEvent
     final String INI_WINDOW_STATE   = "INI_WINDOW_STATE";
 
     final String INI_COMUMN         = "INI_COMUMN_";
-    
+
     void loadCmd()
     {
         try
         {
             Properties p = new Properties();
-            
-            // ini ∆ƒ¿œ ¿–±‚
+
+            // ini ÌååÏùº ÏùΩÍ∏∞
             p.load(new FileInputStream(INI_FILE_CMD));
-            
+
             T.d("p.getProperty(INI_CMD_COUNT) = " + p.getProperty(INI_CMD_COUNT));
             int nCount = Integer.parseInt(p.getProperty(INI_CMD_COUNT));
             T.d("nCount = " + nCount);
@@ -365,15 +378,15 @@ public class LogFilterMain extends JFrame implements INotiEvent
             System.out.println(e);
         }
     }
-    
+
     void loadColor()
     {
         try
         {
             Properties p = new Properties();
-            
+
             p.load(new FileInputStream(INI_FILE_COLOR));
-            
+
             LogColor.COLOR_0 = Integer.parseInt(p.getProperty(INI_COLOR_0).replace("0x", ""), 16);
             LogColor.COLOR_1 = Integer.parseInt(p.getProperty(INI_COLOR_1).replace("0x", ""), 16);
             LogColor.COLOR_2 = Integer.parseInt(p.getProperty(INI_COLOR_2).replace("0x", ""), 16);
@@ -383,7 +396,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             LogColor.COLOR_INFO  = LogColor.COLOR_6 = Integer.parseInt(p.getProperty(INI_COLOR_6).replace("0x", ""), 16);
             LogColor.COLOR_DEBUG = LogColor.COLOR_7 = Integer.parseInt(p.getProperty(INI_COLOR_7).replace("0x", ""), 16);
             LogColor.COLOR_FATAL = LogColor.COLOR_8 = Integer.parseInt(p.getProperty(INI_COLOR_8).replace("0x", ""), 16);
-            
+
             int nCount = Integer.parseInt(p.getProperty( INI_HIGILIGHT_COUNT, "0" ));
             if(nCount > 0)
             {
@@ -402,7 +415,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             System.out.println(e);
         }
     }
-    
+
     void saveColor()
     {
         try
@@ -433,17 +446,17 @@ public class LogFilterMain extends JFrame implements INotiEvent
             e.printStackTrace();
         }
     }
-    
+
     void loadFilter()
     {
         try
         {
             Properties p = new Properties();
-            
-            // ini ∆ƒ¿œ ¿–±‚
+
+            // ini ÌååÏùº ÏùΩÍ∏∞
             p.load(new FileInputStream(INI_FILE));
-            
-            // Key ∞™ ¿–±‚
+
+            // Key Í∞í ÏùΩÍ∏∞
             String strFontType = p.getProperty(INI_FONT_TYPE);
             if(strFontType != null && strFontType.length() > 0)
                 m_jcFontType.setSelectedItem(p.getProperty(INI_FONT_TYPE));
@@ -451,13 +464,14 @@ public class LogFilterMain extends JFrame implements INotiEvent
             m_tfRemoveWord.setText(p.getProperty(INI_WORD_REMOVE));
             m_tfShowTag.setText(p.getProperty(INI_TAG_SHOW));
             m_tfRemoveTag.setText(p.getProperty(INI_TAG_REMOVE));
+            m_tfShowProcess.setText(p.getProperty(INI_PROCESS_SHOW));
             m_tfShowPid.setText(p.getProperty(INI_PID_SHOW));
             m_tfShowTid.setText(p.getProperty(INI_TID_SHOW));
             m_tfHighlight.setText(p.getProperty(INI_HIGHLIGHT));
             m_nWinWidth  = Integer.parseInt( p.getProperty( INI_WIDTH ));
             m_nWinHeight = Integer.parseInt( p.getProperty( INI_HEIGHT ));
             m_nWindState = Integer.parseInt( p.getProperty( INI_WINDOW_STATE ));
-            
+
             for(int nIndex = 0; nIndex < LogFilterTableModel.COMUMN_MAX; nIndex++)
             {
                 LogFilterTableModel.setColumnWidth( nIndex, Integer.parseInt( p.getProperty( INI_COMUMN + nIndex) ) );
@@ -468,7 +482,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             System.out.println(e);
         }
     }
-    
+
     void saveFilter()
     {
         try
@@ -477,7 +491,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             m_nWinHeight = m_nLastHeight;
             m_nWindState = getExtendedState();
             T.d("m_nWindState = " + m_nWindState);
-            
+
             Properties p = new Properties();
 //            p.setProperty( INI_LAST_DIR, m_strLastDir );
             p.setProperty(INI_FONT_TYPE,   (String)m_jcFontType.getSelectedItem());
@@ -485,6 +499,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             p.setProperty(INI_WORD_REMOVE, m_tfRemoveWord.getText());
             p.setProperty(INI_TAG_SHOW,    m_tfShowTag.getText());
             p.setProperty(INI_TAG_REMOVE,  m_tfRemoveTag.getText());
+            p.setProperty(INI_PROCESS_SHOW,m_tfShowProcess.getText());
             p.setProperty(INI_PID_SHOW,    m_tfShowPid.getText());
             p.setProperty(INI_TID_SHOW,    m_tfShowTid.getText());
             p.setProperty(INI_HIGHLIGHT,   m_tfHighlight.getText());
@@ -503,7 +518,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             e.printStackTrace();
         }
     }
-    
+
     void addDesc(String strMessage)
     {
         LogInfo logInfo = new LogInfo();
@@ -516,26 +531,26 @@ public class LogFilterMain extends JFrame implements INotiEvent
     {
         addDesc(VERSION);
         addDesc("");
-        addDesc("Version 1.8 : java -jar LogFilter_xx.jar [filename] √ﬂ∞°");
-        addDesc("Version 1.7 : copyΩ√ ∫∏¿Ã¥¬ column∏∏ clipboardø° ∫πªÁ(Line ¡¶ø‹)");
-        addDesc("Version 1.6 : cmdƒﬁ∫∏π⁄Ω∫ ±Ê¿Ã ∞Ì¡§");
-        addDesc("Version 1.5 : Highlight color list√ﬂ∞°()");
-        addDesc("   - LogFilterColor.ini ø° ƒ´øÓ∆ÆøÕ ∞™ ≥÷æÓ ¡÷Ω√∏È µÀ¥œ¥Ÿ.");
+        addDesc("Version 1.8 : java -jar LogFilter_xx.jar [filename] Ï∂îÍ∞Ä");
+        addDesc("Version 1.7 : copyÏãú Î≥¥Ïù¥Îäî columnÎßå clipboardÏóê Î≥µÏÇ¨(Line Ï†úÏô∏)");
+        addDesc("Version 1.6 : cmdÏΩ§Î≥¥Î∞ïÏä§ Í∏∏Ïù¥ Í≥†Ï†ï");
+        addDesc("Version 1.5 : Highlight color listÏ∂îÍ∞Ä()");
+        addDesc("   - LogFilterColor.ini Ïóê Ïπ¥Ïö¥Ìä∏ÏôÄ Í∞í ÎÑ£Ïñ¥ Ï£ºÏãúÎ©¥ Îê©ÎãàÎã§.");
         addDesc("   - ex)INI_HIGILIGHT_COUNT=2");
         addDesc("   -    INI_COLOR_HIGILIGHT_0=0xFFFF");
         addDesc("   -    INI_COLOR_HIGILIGHT_1=0x00FF");
-        addDesc("Version 1.4 : √¢≈©±‚ ¿˙¿Â");
-        addDesc("Version 1.3 : recent file π◊ open∏ﬁ¥∫√ﬂ∞°");
-        addDesc("Version 1.2 : Tid « ≈Õ √ﬂ∞°");
-        addDesc("Version 1.1 : Level F √ﬂ∞°");
-        addDesc("Version 1.0 : Pid filter √ﬂ∞°");
-        addDesc("Version 0.9 : Font type √ﬂ∞°");
-        addDesc("Version 0.8 : « ≈Õ√º≈© π⁄Ω∫ √ﬂ∞°");
-        addDesc("Version 0.7 : ƒø≥Œ∑Œ±◊ ∆ƒΩÃ/LogFilter.iniø° ƒ√∑Ø¡§¿«(0~7)");
-        addDesc("Version 0.6 : « ≈Õ ¥Îº“πÆ π´Ω√");
-        addDesc("Version 0.5 : ∏Ì∑…æÓ ini∆ƒ¿œ∑Œ ¿˙¿Â");
-        addDesc("Version 0.4 : add thread option, filter ¿˙¿Â");
-        addDesc("Version 0.3 : ¥‹∏ª º±≈√ æ»µ«¥¬ πÆ¡¶ ºˆ¡§");
+        addDesc("Version 1.4 : Ï∞ΩÌÅ¨Í∏∞ Ï†ÄÏû•");
+        addDesc("Version 1.3 : recent file Î∞è openÎ©îÎâ¥Ï∂îÍ∞Ä");
+        addDesc("Version 1.2 : Tid ÌïÑÌÑ∞ Ï∂îÍ∞Ä");
+        addDesc("Version 1.1 : Level F Ï∂îÍ∞Ä");
+        addDesc("Version 1.0 : Pid filter Ï∂îÍ∞Ä");
+        addDesc("Version 0.9 : Font type Ï∂îÍ∞Ä");
+        addDesc("Version 0.8 : ÌïÑÌÑ∞Ï≤¥ÌÅ¨ Î∞ïÏä§ Ï∂îÍ∞Ä");
+        addDesc("Version 0.7 : Ïª§ÎÑêÎ°úÍ∑∏ ÌååÏã±/LogFilter.iniÏóê Ïª¨Îü¨Ï†ïÏùò(0~7)");
+        addDesc("Version 0.6 : ÌïÑÌÑ∞ ÎåÄÏÜåÎ¨∏ Î¨¥Ïãú");
+        addDesc("Version 0.5 : Î™ÖÎ†πÏñ¥ iniÌååÏùºÎ°ú Ï†ÄÏû•");
+        addDesc("Version 0.4 : add thread option, filter Ï†ÄÏû•");
+        addDesc("Version 0.3 : Îã®Îßê ÏÑ†ÌÉù ÏïàÎêòÎäî Î¨∏Ï†ú ÏàòÏ†ï");
         addDesc("");
         addDesc("[Tag]");
         addDesc("Alt+L/R Click : Show/Remove tag");
@@ -554,7 +569,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
     }
 
     /**
-     * @param nIndex    Ω«¡¶ ∏ÆΩ∫∆Æ¿« ¿Œµ¶Ω∫
+     * @param nIndex    Ïã§Ï†ú Î¶¨Ïä§Ìä∏Ïùò Ïù∏Îç±Ïä§
      * @param nLine     m_strLine
      * @param bBookmark
      */
@@ -737,6 +752,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
                     if(bAddFilteredArray) m_arLogInfoFiltered.add(logInfo);
                 }
                 else if(checkLogLVFilter(logInfo)
+                        && checkProcessFilter(logInfo)
                         && checkPidFilter(logInfo)
                         && checkTidFilter(logInfo)
                         && checkShowTagFilter(logInfo)
@@ -762,11 +778,13 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_tfRemoveWord.getDocument().addDocumentListener(m_dlFilterListener);
         m_tfShowTag.getDocument().addDocumentListener(m_dlFilterListener);
         m_tfRemoveTag.getDocument().addDocumentListener(m_dlFilterListener);
+        m_tfShowProcess.getDocument().addDocumentListener(m_dlFilterListener);
         m_tfShowPid.getDocument().addDocumentListener(m_dlFilterListener);
         m_tfShowTid.getDocument().addDocumentListener(m_dlFilterListener);
 
         m_chkEnableFind.addItemListener(m_itemListener);
         m_chkEnableRemove.addItemListener(m_itemListener);
+        m_chkEnableShowProcess.addItemListener(m_itemListener);
         m_chkEnableShowPid.addItemListener(m_itemListener);
         m_chkEnableShowTid.addItemListener(m_itemListener);
         m_chkEnableShowTag.addItemListener(m_itemListener);
@@ -784,6 +802,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_chkClmDate.addItemListener(m_itemListener);
         m_chkClmTime.addItemListener(m_itemListener);
         m_chkClmLogLV.addItemListener(m_itemListener);
+        m_chkClmProcess.addItemListener(m_itemListener);
         m_chkClmPid.addItemListener(m_itemListener);
         m_chkClmThread.addItemListener(m_itemListener);
         m_chkClmTag.addItemListener(m_itemListener);
@@ -811,12 +830,14 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_chkEnableRemove       = new JCheckBox();
         m_chkEnableShowTag      = new JCheckBox();
         m_chkEnableRemoveTag    = new JCheckBox();
+        m_chkEnableShowProcess  = new JCheckBox();
         m_chkEnableShowPid      = new JCheckBox();
         m_chkEnableShowTid      = new JCheckBox();
         m_chkEnableFind.setSelected(true);
         m_chkEnableRemove.setSelected(true);
         m_chkEnableShowTag.setSelected(true);
         m_chkEnableRemoveTag.setSelected(true);
+        m_chkEnableShowProcess.setSelected(true);
         m_chkEnableShowPid.setSelected(true);
         m_chkEnableShowTid.setSelected(true);
 
@@ -824,6 +845,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_tfRemoveWord  = new JTextField();
         m_tfShowTag     = new JTextField();
         m_tfRemoveTag   = new JTextField();
+        m_tfShowProcess = new JTextField();
         m_tfShowPid     = new JTextField();
         m_tfShowTid     = new JTextField();
 
@@ -851,8 +873,15 @@ public class LogFilterMain extends JFrame implements INotiEvent
 
         jpMain.add(jpWordFilter, BorderLayout.NORTH);
 
-        JPanel jpTagFilter = new JPanel(new GridLayout(4, 1));
+        JPanel jpTagFilter = new JPanel(new GridLayout(5, 1));
         jpTagFilter.setBorder(BorderFactory.createTitledBorder("Tag filter"));
+
+        JPanel jpProcess = new JPanel(new BorderLayout());
+        JLabel process = new JLabel();
+        process.setText("     Process : ");
+        jpProcess.add(process, BorderLayout.WEST);
+        jpProcess.add(m_tfShowProcess, BorderLayout.CENTER);
+        jpProcess.add(m_chkEnableShowProcess, BorderLayout.EAST);
 
         JPanel jpPid = new JPanel(new BorderLayout());
         JLabel pid = new JLabel();
@@ -882,6 +911,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
         jpRemoveTag.add(m_tfRemoveTag, BorderLayout.CENTER);
         jpRemoveTag.add(m_chkEnableRemoveTag, BorderLayout.EAST);
 
+        jpTagFilter.add(jpProcess);
         jpTagFilter.add(jpPid);
         jpTagFilter.add(jpTid);
         jpTagFilter.add(jpShow);
@@ -925,6 +955,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_chkClmDate    = new JCheckBox();
         m_chkClmTime    = new JCheckBox();
         m_chkClmLogLV   = new JCheckBox();
+        m_chkClmProcess = new JCheckBox();
         m_chkClmPid     = new JCheckBox();
         m_chkClmThread  = new JCheckBox();
         m_chkClmTag     = new JCheckBox();
@@ -969,6 +1000,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_chkClmTime.setSelected(true);
         m_chkClmLogLV.setText("LogLV");
         m_chkClmLogLV.setSelected(true);
+        m_chkClmProcess.setText("Process");
+        m_chkClmProcess.setSelected(true);
         m_chkClmPid.setText("Pid");
         m_chkClmPid.setSelected(true);
         m_chkClmThread.setText("Thread");
@@ -982,6 +1015,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
         jpShowColumn.add(m_chkClmDate);
         jpShowColumn.add(m_chkClmTime);
         jpShowColumn.add(m_chkClmLogLV);
+        jpShowColumn.add(m_chkClmProcess);
         jpShowColumn.add(m_chkClmPid);
         jpShowColumn.add(m_chkClmThread);
         jpShowColumn.add(m_chkClmTag);
@@ -1163,6 +1197,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
 
         m_strLogFileName = makeFilename();
 //        m_strProcessCmd     = ANDROID_DEFAULT_CMD + m_strLogFileName;
+
+        m_ProcessMap        = new HashMap<String, String>();
     }
 
     void parseFile(final File file)
@@ -1250,6 +1286,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
         m_strSelectedDevice = "";
 
         DefaultListModel listModel = (DefaultListModel)m_lDeviceList.getModel();
+        BufferedReader stdOut = null;
+        BufferedReader stdError = null;
         try
         {
             listModel.clear();
@@ -1259,11 +1297,11 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 strCommand = (String)m_comboDeviceCmd.getSelectedItem();
             Process oProcess = Runtime.getRuntime().exec(strCommand);
 
-            // ø‹∫Œ «¡∑Œ±◊∑• √‚∑¬ ¿–±‚
-            BufferedReader stdOut   = new BufferedReader(new InputStreamReader(oProcess.getInputStream()));
-            BufferedReader stdError = new BufferedReader(new InputStreamReader(oProcess.getErrorStream()));
+            // Ïô∏Î∂Ä ÌîÑÎ°úÍ∑∏Îû® Ï∂úÎ†• ÏùΩÍ∏∞
+            stdOut   = new BufferedReader(new InputStreamReader(oProcess.getInputStream()));
+            stdError = new BufferedReader(new InputStreamReader(oProcess.getErrorStream()));
 
-            // "«•¡ÿ √‚∑¬"∞˙ "«•¡ÿ ø°∑Ø √‚∑¬"¿ª √‚∑¬
+            // "ÌëúÏ§Ä Ï∂úÎ†•"Í≥º "ÌëúÏ§Ä ÏóêÎü¨ Ï∂úÎ†•"ÏùÑ Ï∂úÎ†•
             while ((s =   stdOut.readLine()) != null)
             {
                 if(!s.equals("List of devices attached "))
@@ -1278,13 +1316,99 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 listModel.addElement(s);
             }
 
-            // ø‹∫Œ «¡∑Œ±◊∑• π›»Ø∞™ √‚∑¬ (¿Ã ∫Œ∫–¿∫ « ºˆ∞° æ∆¥‘)
+            // Ïô∏Î∂Ä ÌîÑÎ°úÍ∑∏Îû® Î∞òÌôòÍ∞í Ï∂úÎ†• (Ïù¥ Î∂ÄÎ∂ÑÏùÄ ÌïÑÏàòÍ∞Ä ÏïÑÎãò)
             System.out.println("Exit Code: " + oProcess.exitValue());
         }
         catch(Exception e)
         {
             T.e("e = " + e);
             listModel.addElement(e);
+        } finally {
+            if(stdOut != null)
+                try { stdOut.close(); } catch (IOException e) {}
+            if(stdError != null)
+                try { stdError.close(); } catch (IOException e) {}
+        }
+    }
+
+    void setProcessList() throws InterruptedException
+    {
+        BufferedReader stdIn = null;
+        BufferedReader stdError = null;
+        try
+        {
+            final Process oProcess = Runtime.getRuntime().exec(getProcessCmd() + ANDROID_PROCESS_LIST_CMD_FIRST);
+            oProcess.waitFor();
+
+            // Ïô∏Î∂Ä ÌîÑÎ°úÍ∑∏Îû® Ï∂úÎ†• ÏùΩÍ∏∞
+            stdIn   = new BufferedReader(new InputStreamReader(oProcess.getInputStream()));
+            stdError = new BufferedReader(new InputStreamReader(oProcess.getErrorStream()));
+
+            final BufferedReader inBr = stdIn;
+            final BufferedReader errBr = stdError;
+            Thread t = new Thread(){
+                public void run() {
+
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException e) {
+                        System.err.println("process list ok.");
+                    }
+                    try {
+                        inBr.close();
+                        errBr.close();
+                        oProcess.destroy();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    System.err.println("process list timeout.");
+                };
+            };
+            t.start();
+
+
+            HashMap processMap = new HashMap<>();
+
+            // "ÌëúÏ§Ä Ï∂úÎ†•"Í≥º "ÌëúÏ§Ä ÏóêÎü¨ Ï∂úÎ†•"ÏùÑ Ï∂úÎ†•
+            String s = stdIn.readLine();
+            while ((s = stdIn.readLine()) != null)
+            {
+                //              USER     PID   PPID  VSIZE  RSS     WCHAN    PC         NAME
+                //              u0_a184   3441  1949  544116 25004 ffffffff 00000000 S com.android.email
+                if(s.length() == 0) continue;
+                System.out.println(s);
+
+                s = s.replaceAll(" +", " ");
+
+                String[] strs = s.split(" ");
+                String pid = strs[1];
+                String process = strs[8];
+                System.out.println(pid + " " + process);
+                processMap.put(pid, process);
+            }
+
+            while ((s = stdError.readLine()) != null)
+            {
+                T.e(s);
+            }
+
+//            synchronized (LogFilterMain.class) {
+                m_ProcessMap.clear();
+                m_ProcessMap = processMap;
+//            }
+
+            // Ïô∏Î∂Ä ÌîÑÎ°úÍ∑∏Îû® Î∞òÌôòÍ∞í Ï∂úÎ†• (Ïù¥ Î∂ÄÎ∂ÑÏùÄ ÌïÑÏàòÍ∞Ä ÏïÑÎãò)
+            System.out.println("Exit Code: " + oProcess.exitValue());
+            oProcess.destroy();
+        }
+        catch(Exception e)
+        {
+            T.e("e = " + e);
+        } finally {
+            if(stdIn != null)
+                try { stdIn.close(); } catch (IOException e) {}
+            if(stdError != null)
+                try { stdError.close(); } catch (IOException e) {}
         }
     }
 
@@ -1344,6 +1468,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
             m_tbLogTable.setFilterFind(checkBox.isSelected() ? m_tfFindWord.getText() : "");
         if(checkBox.equals(m_chkEnableRemove))
             m_tbLogTable.SetFilterRemove(checkBox.isSelected() ? m_tfRemoveWord.getText() : "");
+        if(checkBox.equals(m_chkEnableShowProcess))
+            m_tbLogTable.SetFilterShowProcess(checkBox.isSelected() ? m_tfShowProcess.getText() : "");
         if(checkBox.equals(m_chkEnableShowPid))
             m_tbLogTable.SetFilterShowPid(checkBox.isSelected() ? m_tfShowPid.getText() : "");
         if(checkBox.equals(m_chkEnableShowTid))
@@ -1384,7 +1510,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             return ANDROID_DEFAULT_CMD_FIRST + m_comboCmd.getSelectedItem();
 //            return ANDROID_DEFAULT_CMD_FIRST + m_comboCmd.getSelectedItem() + makeFilename();
         else
-            return ANDROID_SELECTED_CMD_FIRST + m_strSelectedDevice + m_comboCmd.getSelectedItem();
+            return ANDROID_SELECTED_CMD_FIRST + m_strSelectedDevice/* + m_comboCmd.getSelectedItem()*/;
     }
 
     void setProcessCmd(int nType, String strSelectedDevice)
@@ -1446,10 +1572,19 @@ public class LogFilterMain extends JFrame implements INotiEvent
         if(m_Process != null) m_Process.destroy();
         if(m_thProcess != null) m_thProcess.interrupt();
         if(m_thWatchFile != null) m_thWatchFile.interrupt();
+//        if(m_thProcessList != null) m_thProcessList.interrupt();
         m_Process = null;
         m_thProcess = null;
         m_thWatchFile = null;
+        m_thProcessList = null;
         m_bPauseADB = false;
+    }
+
+    private String getProcessName(String pid) {
+
+//        synchronized (LogFilterMain.class) {
+            return m_ProcessMap.get(pid);
+//        }
     }
 
     void startFileParse()
@@ -1507,6 +1642,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
                                 if(strLine != null && !"".equals(strLine.trim()))
                                 {
                                     LogInfo logInfo = m_iLogParser.parseLog(strLine);
+                                    logInfo.m_strProcess = "" + getProcessName(logInfo.m_strPid);
                                     logInfo.m_strLine = "" + nLine++;
                                     addLogInfo(logInfo);
                                     nAddCount++;
@@ -1647,12 +1783,13 @@ public class LogFilterMain extends JFrame implements INotiEvent
                                     if(bAddFilteredArray) m_arLogInfoFiltered.add(logInfo);
                                 }
                                 else if(checkLogLVFilter(logInfo)
-                                    && checkPidFilter(logInfo)
-                                    && checkTidFilter(logInfo)
-                                    && checkShowTagFilter(logInfo)
-                                    && checkRemoveTagFilter(logInfo)
-                                    && checkFindFilter(logInfo)
-                                    && checkRemoveFilter(logInfo))
+                                        && checkProcessFilter(logInfo)
+                                        && checkPidFilter(logInfo)
+                                        && checkTidFilter(logInfo)
+                                        && checkShowTagFilter(logInfo)
+                                        && checkRemoveTagFilter(logInfo)
+                                        && checkFindFilter(logInfo)
+                                        && checkRemoveFilter(logInfo))
                                 {
                                     m_arLogInfoFiltered.add(logInfo);
                                     if(logInfo.m_bMarked)
@@ -1685,8 +1822,24 @@ public class LogFilterMain extends JFrame implements INotiEvent
     {
         clearData();
         m_tbLogTable.clearSelection();
-        m_thProcess = new Thread(new Runnable()
-        {
+
+        m_thProcessList = new Thread("PROCESS LIST") {
+            @Override
+            public void run() {
+                try {
+                    while (true) {
+                        setProcessList();
+                        Thread.sleep(1000);
+                    }
+                } catch (InterruptedException e) {
+                    T.e("e = " + e);
+                    e.printStackTrace();
+                }
+            }
+        };
+        m_thProcessList.start();
+
+        m_thProcess = new Thread("LOGCAT THREAD") {
             public void run()
             {
                 try
@@ -1695,8 +1848,9 @@ public class LogFilterMain extends JFrame implements INotiEvent
                     m_Process = null;
                     setProcessCmd(m_comboDeviceCmd.getSelectedIndex(), m_strSelectedDevice);
 
-                    T.d("getProcessCmd() = " + getProcessCmd());
-                    m_Process = Runtime.getRuntime().exec(getProcessCmd());
+                    String processCmd = getProcessCmd() + m_comboCmd.getSelectedItem();
+                    T.d("getProcessCmd() = " + processCmd);
+                    m_Process = Runtime.getRuntime().exec(processCmd);
                     BufferedReader stdOut   = new BufferedReader(new InputStreamReader(m_Process.getInputStream(), "UTF-8"));
 
 //                    BufferedWriter fileOut = new BufferedWriter(new FileWriter(m_strLogFileName));
@@ -1726,7 +1880,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 }
                 stopProcess();
             }
-        });
+        };
         m_thProcess.start();
         setProcessBtn(true);
     }
@@ -1747,6 +1901,21 @@ public class LogFilterMain extends JFrame implements INotiEvent
             return true;
         if((m_nFilterLogLV & LogInfo.LOG_LV_FATAL) != 0 && (logInfo.m_strLogLV.equals("F") || logInfo.m_strLogLV.equals("FATAL")))
             return true;
+
+        return false;
+    }
+
+    boolean checkProcessFilter(LogInfo logInfo)
+    {
+        if(m_tbLogTable.GetFilterShowProcess().length() <= 0) return true;
+
+        StringTokenizer stk = new StringTokenizer(m_tbLogTable.GetFilterShowProcess(), "|", false);
+
+        while(stk.hasMoreElements())
+        {
+            if(logInfo.m_strProcess.toLowerCase().contains(stk.nextToken().toLowerCase()))
+                return true;
+        }
 
         return false;
     }
@@ -1844,14 +2013,15 @@ public class LogFilterMain extends JFrame implements INotiEvent
     boolean checkUseFilter()
     {
         if(!m_ipIndicator.m_chBookmark.isSelected()
-            && !m_ipIndicator.m_chError.isSelected()
-            && checkLogLVFilter(new LogInfo())
-            && (m_tbLogTable.GetFilterShowPid().length() == 0   || !m_chkEnableShowPid.isSelected())
-            && (m_tbLogTable.GetFilterShowTid().length() == 0   || !m_chkEnableShowTid.isSelected())
-            && (m_tbLogTable.GetFilterShowTag().length() == 0   || !m_chkEnableShowTag.isSelected())
-            && (m_tbLogTable.GetFilterRemoveTag().length() == 0 || !m_chkEnableRemoveTag.isSelected())
-            && (m_tbLogTable.GetFilterFind().length() == 0      || !m_chkEnableFind.isSelected())
-            && (m_tbLogTable.GetFilterRemove().length() == 0    || !m_chkEnableRemove.isSelected()))
+                && !m_ipIndicator.m_chError.isSelected()
+                && checkLogLVFilter(new LogInfo())
+                && (m_tbLogTable.GetFilterShowProcess().length() == 0 || !m_chkEnableShowProcess.isSelected())
+                && (m_tbLogTable.GetFilterShowPid().length() == 0     || !m_chkEnableShowPid.isSelected())
+                && (m_tbLogTable.GetFilterShowTid().length() == 0     || !m_chkEnableShowTid.isSelected())
+                && (m_tbLogTable.GetFilterShowTag().length() == 0     || !m_chkEnableShowTag.isSelected())
+                && (m_tbLogTable.GetFilterRemoveTag().length() == 0   || !m_chkEnableRemoveTag.isSelected())
+                && (m_tbLogTable.GetFilterFind().length() == 0        || !m_chkEnableFind.isSelected())
+                && (m_tbLogTable.GetFilterRemove().length() == 0      || !m_chkEnableRemove.isSelected()))
         {
             m_bUserFilter = false;
         }
@@ -1891,7 +2061,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
             else if(e.getSource().equals(m_jcFontType))
             {
                 T.d("font = " + m_tbLogTable.getFont());
-                
+
                 m_tbLogTable.setFont(new Font((String)m_jcFontType.getSelectedItem(), Font.PLAIN, 12));
                 m_tbLogTable.setFontSize(Integer.parseInt(m_tfFontSize.getText()));
             }
@@ -1938,6 +2108,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
                     m_tbLogTable.setFilterFind(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfRemoveWord.getDocument()) && m_chkEnableRemove.isSelected())
                     m_tbLogTable.SetFilterRemove(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
+                else if(arg0.getDocument().equals(m_tfShowProcess.getDocument()) && m_chkEnableShowProcess.isSelected())
+                    m_tbLogTable.SetFilterShowProcess(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfShowPid.getDocument()) && m_chkEnableShowPid.isSelected())
                     m_tbLogTable.SetFilterShowPid(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfShowTid.getDocument()) && m_chkEnableShowTid.isSelected())
@@ -1965,6 +2137,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
                     m_tbLogTable.setFilterFind(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfRemoveWord.getDocument()) && m_chkEnableRemove.isSelected())
                     m_tbLogTable.SetFilterRemove(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
+                else if(arg0.getDocument().equals(m_tfShowProcess.getDocument()) && m_chkEnableShowProcess.isSelected())
+                    m_tbLogTable.SetFilterShowProcess(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfShowPid.getDocument()) && m_chkEnableShowPid.isSelected())
                     m_tbLogTable.SetFilterShowPid(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfShowTid.getDocument()) && m_chkEnableShowTid.isSelected())
@@ -1992,7 +2166,9 @@ public class LogFilterMain extends JFrame implements INotiEvent
                     m_tbLogTable.setFilterFind(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfRemoveWord.getDocument()) && m_chkEnableRemove.isSelected())
                     m_tbLogTable.SetFilterRemove(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
-                else if(arg0.getDocument().equals(m_tfShowPid.getDocument()) && m_chkEnableShowPid.isSelected())
+                else if(arg0.getDocument().equals(m_tfShowProcess.getDocument()) && m_chkEnableShowProcess.isSelected())
+                    m_tbLogTable.SetFilterShowProcess(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
+                else if(arg0.getDocument().equals(m_tfShowTid.getDocument()) && m_chkEnableShowTid.isSelected())
                     m_tbLogTable.SetFilterShowPid(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
                 else if(arg0.getDocument().equals(m_tfShowTid.getDocument()) && m_chkEnableShowTid.isSelected())
                     m_tbLogTable.SetFilterShowTid(arg0.getDocument().getText(0, arg0.getDocument().getLength()));
@@ -2038,6 +2214,8 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 m_tbLogTable.showColumn(LogFilterTableModel.COMUMN_TIME, check.isSelected());
             else if(check.equals(m_chkClmLogLV))
                 m_tbLogTable.showColumn(LogFilterTableModel.COMUMN_LOGLV, check.isSelected());
+            else if(check.equals(m_chkClmProcess))
+                m_tbLogTable.showColumn(LogFilterTableModel.COMUMN_PROCESS, check.isSelected());
             else if(check.equals(m_chkClmPid))
                 m_tbLogTable.showColumn(LogFilterTableModel.COMUMN_PID, check.isSelected());
             else if(check.equals(m_chkClmThread))
@@ -2048,6 +2226,7 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 m_tbLogTable.showColumn(LogFilterTableModel.COMUMN_MESSAGE, check.isSelected());
             else if(check.equals(m_chkEnableFind)
                     || check.equals(m_chkEnableRemove)
+                    || check.equals(m_chkEnableShowProcess)
                     || check.equals(m_chkEnableShowPid)
                     || check.equals(m_chkEnableShowTid)
                     || check.equals(m_chkEnableShowTag)
@@ -2056,10 +2235,10 @@ public class LogFilterMain extends JFrame implements INotiEvent
                 useFilter(check);
         }
     };
-    
+
     public void openFileBrowser()
     {
-        FileDialog fd = new FileDialog(this, "File open", FileDialog.LOAD); 
+        FileDialog fd = new FileDialog(this, "File open", FileDialog.LOAD);
 //        fd.setDirectory( m_strLastDir );
         fd.setVisible( true );
         if (fd.getFile() != null)

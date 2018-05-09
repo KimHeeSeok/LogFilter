@@ -39,7 +39,7 @@ public class IndicatorPanel extends JPanel
     Graphics                  m_g;
     LogFilterMain             m_LogFilterMain;
     public boolean            m_bDrawFull;
-    
+
 
     public IndicatorPanel(LogFilterMain logFilterMain)
     {
@@ -62,7 +62,7 @@ public class IndicatorPanel extends JPanel
 
         addMouseListener(new MouseListener()
         {
-            public void mouseReleased(MouseEvent e){}            
+            public void mouseReleased(MouseEvent e){}
             public void mousePressed(MouseEvent e)
             {
                 if(m_arLogInfo != null)
@@ -72,9 +72,9 @@ public class IndicatorPanel extends JPanel
                     m_LogFilterMain.m_tbLogTable.showRow(nIndex, false);
                 }
             }
-            
-            public void mouseExited(MouseEvent e){}            
-            public void mouseEntered(MouseEvent e){}            
+
+            public void mouseExited(MouseEvent e){}
+            public void mouseEntered(MouseEvent e){}
             public void mouseClicked(MouseEvent e){}
         });
         addMouseMotionListener(new MouseMotionListener()
@@ -98,7 +98,7 @@ public class IndicatorPanel extends JPanel
             }
         });
     }
-    
+
     public void testMsg(String strMsg)
     {
         JOptionPane.showMessageDialog(this, strMsg);
@@ -117,10 +117,10 @@ public class IndicatorPanel extends JPanel
         drawBookmark(m_g);
         drawError(m_g);
         drawPageIndicator(m_g);
-        
+
         m_bDrawFull = true;
     }
-    
+
     void drawIndicator(Graphics g)
     {
         if(m_arLogInfo == null) return;
@@ -135,7 +135,7 @@ public class IndicatorPanel extends JPanel
             if(m_rcBookmark.height > TOTAL_COUNT)
                 HEIGHT = m_rcBookmark.height / TOTAL_COUNT + 1;
 
-            //ºÏ¸¶Å© indicator¸¦ ±×¸°´Ù.
+            //ë¶ë§ˆí¬ indicatorë¥¼ ê·¸ë¦°ë‹¤.
             for( Integer nIndex : m_hmBookmark.keySet())
             {
                 if(m_LogFilterMain.m_nChangedFilter == LogFilterMain.STATUS_CHANGE || m_LogFilterMain.m_nChangedFilter == LogFilterMain.STATUS_PARSING)
@@ -151,7 +151,7 @@ public class IndicatorPanel extends JPanel
             }
 
 
-            //¿¡·¯ indicator¸¦ ±×¸°´Ù.
+            //ì—ëŸ¬ indicatorë¥¼ ê·¸ë¦°ë‹¤.
             for( Integer nIndex : m_hmError.keySet())
             {
                 if(m_LogFilterMain.m_nChangedFilter == LogFilterMain.STATUS_CHANGE || m_LogFilterMain.m_nChangedFilter == LogFilterMain.STATUS_PARSING)
@@ -179,7 +179,7 @@ public class IndicatorPanel extends JPanel
         g.setColor(Color.RED);
         g.drawRect(m_rcError.x, m_rcError.y, m_rcError.width, m_rcError.height);
     }
-    
+
     int PAGE_INDICATOR_WIDTH = 3;
     int PAGE_INDICATOR_GAP = 2;
     void drawPageIndicator(Graphics g)
@@ -192,7 +192,7 @@ public class IndicatorPanel extends JPanel
         {
             JViewport viewport = (JViewport)m_LogFilterMain.m_scrollVBar.getViewport();
             Rectangle viewRect = viewport.getViewRect();
-            
+
             int nItemHeight = m_LogFilterMain.m_tbLogTable.getRowHeight();
             if(nItemHeight > 0)
             {
@@ -227,7 +227,7 @@ public class IndicatorPanel extends JPanel
             }
         }
     };
-    
+
     public void setData(ArrayList<LogInfo> arLogInfo, HashMap<Integer, Integer> hmBookmark, HashMap<Integer, Integer> hmError)
     {
         m_arLogInfo     = arLogInfo;

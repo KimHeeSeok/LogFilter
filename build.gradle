@@ -1,0 +1,50 @@
+apply plugin: 'java'
+
+sourceSets {
+    main {
+        java {
+            srcDirs = [
+                "$projectDir/src/",
+            ]
+            include '**/*.java'
+        }
+
+        resources {
+            srcDirs = [
+                    "$projectDir/src/main/resources"
+            ]
+
+        }
+    }
+
+    test {
+        java { srcDir 'src/test/java'}
+        resources { srcDir 'src/test/resources' }
+    }
+
+    componentTest {
+        java { srcDir 'src/ctest/java' }
+        resources { srcDir 'src/ctest/resources' }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+}
+
+jar {
+    manifest {
+        attributes(
+                "Main-Class": "LogFilterMain"
+        )
+    }
+}
+
+task exportJar(type:Copy) {
+    from('build/libs/')
+    into('./')
+    include('*.jar')
+}
+
+sourceCompatibility = "1.7"
+targetCompatibility = "1.7"

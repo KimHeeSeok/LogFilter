@@ -10,19 +10,20 @@ public class LogInfo
     public static final int LOG_LV_FATAL    = LOG_LV_ERROR << 1;
     public static final int LOG_LV_ALL      = LOG_LV_VERBOSE | LOG_LV_DEBUG | LOG_LV_INFO
                                               | LOG_LV_WARN | LOG_LV_ERROR | LOG_LV_FATAL;
-    
+
     boolean                 m_bMarked;
     String                  m_strBookmark   = "";
     String                  m_strDate       = "";
     String                  m_strLine       = "";
     String                  m_strTime       = "";
     String                  m_strLogLV      = "";
+    String                  m_strProcess    = "";
     String                  m_strPid        = "";
     String                  m_strThread     = "";
     String                  m_strTag        = "";
     String                  m_strMessage    = "";
     Color                   m_TextColor;
-    
+
     public void display()
     {
         T.d("=============================================");
@@ -32,13 +33,14 @@ public class LogInfo
         T.d("m_strLine      = " + m_strLine);
         T.d("m_strTime      = " + m_strTime);
         T.d("m_strLogLV     = " + m_strLogLV);
+        T.d("m_strProcess   = " + m_strProcess);
         T.d("m_strPid       = " + m_strPid);
         T.d("m_strThread    = " + m_strThread);
         T.d("m_strTag       = " + m_strTag);
         T.d("m_strMessage   = " + m_strMessage);
         T.d("=============================================");
     }
-    
+
     public Object getData(int nColumn)
     {
         switch(nColumn)
@@ -51,6 +53,8 @@ public class LogInfo
                 return m_strTime;
             case LogFilterTableModel.COMUMN_LOGLV:
                 return m_strLogLV;
+            case LogFilterTableModel.COMUMN_PROCESS:
+                return m_strProcess;
             case LogFilterTableModel.COMUMN_PID:
                 return m_strPid;
             case LogFilterTableModel.COMUMN_THREAD:

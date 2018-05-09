@@ -2,11 +2,11 @@ import java.awt.Color;
 import java.util.StringTokenizer;
 
 /**
- * 
+ *
  */
 
 /**
- * 
+ *
  */
 public class LogCatParser implements ILogParser
 {
@@ -16,11 +16,11 @@ public class LogCatParser implements ILogParser
     final String TOKEN       = "/()";
     final String TOKEN_PID   = "/() ";
     final String TOKEN_MESSAGE = "'";
-    
+
     public Color getColor(LogInfo logInfo)
     {
         if(logInfo.m_strLogLV == null) return Color.BLACK;
-        
+
         if(logInfo.m_strLogLV.equals("FATAL") || logInfo.m_strLogLV.equals("F"))
             return new Color(LogColor.COLOR_FATAL);
         if(logInfo.m_strLogLV.equals("ERROR") || logInfo.m_strLogLV.equals("E") || logInfo.m_strLogLV.equals("3"))
@@ -46,7 +46,7 @@ public class LogCatParser implements ILogParser
     public int getLogLV(LogInfo logInfo)
     {
         if(logInfo.m_strLogLV == null) return LogInfo.LOG_LV_VERBOSE;
-        
+
         if(logInfo.m_strLogLV.equals("FATAL") || logInfo.m_strLogLV.equals("F"))
             return LogInfo.LOG_LV_FATAL;
         if(logInfo.m_strLogLV.equals("ERROR") || logInfo.m_strLogLV.equals("E"))
@@ -60,7 +60,7 @@ public class LogCatParser implements ILogParser
         else
             return LogInfo.LOG_LV_VERBOSE;
     }
-    
+
 //04-17 09:01:18.910 D/LightsService(  139): BKL : 106
     public boolean isNormal(String strText)
     {
@@ -78,7 +78,7 @@ public class LogCatParser implements ILogParser
         return false;
     }
 
-//04-20 12:06:02.125   146   179 D BatteryService: update start    
+//04-20 12:06:02.125   146   179 D BatteryService: update start
     public boolean isThreadTime(String strText)
     {
         if(strText.length() < 34) return false;
@@ -94,8 +94,8 @@ public class LogCatParser implements ILogParser
             return true;
         return false;
     }
-    
-//    <4>[19553.494855] [DEBUG] USB_SEL(1) HIGH set USB mode 
+
+//    <4>[19553.494855] [DEBUG] USB_SEL(1) HIGH set USB mode
     public boolean isKernel(String strText)
     {
         if(strText.length() < 18) return false;
@@ -113,11 +113,11 @@ public class LogCatParser implements ILogParser
             return true;
         return false;
     }
-    
+
     public LogInfo getNormal(String strText)
     {
         LogInfo logInfo = new LogInfo();
-        
+
         StringTokenizer stk = new StringTokenizer(strText, TOKEN_PID, false);
         if(stk.hasMoreElements())
             logInfo.m_strDate = stk.nextToken();
@@ -145,7 +145,7 @@ public class LogCatParser implements ILogParser
     public LogInfo getThreadTime(String strText)
     {
         LogInfo logInfo = new LogInfo();
-        
+
         StringTokenizer stk = new StringTokenizer(strText, TOKEN_SPACE, false);
         if(stk.hasMoreElements())
             logInfo.m_strDate = stk.nextToken();
@@ -175,7 +175,7 @@ public class LogCatParser implements ILogParser
     public LogInfo getKernel(String strText)
     {
         LogInfo logInfo = new LogInfo();
-        
+
         StringTokenizer stk = new StringTokenizer(strText, TOKEN_KERNEL, false);
         if(stk.hasMoreElements())
             logInfo.m_strLogLV = stk.nextToken();

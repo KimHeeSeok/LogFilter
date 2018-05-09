@@ -35,6 +35,7 @@ public class LogTable extends JTable implements FocusListener, ActionListener
     LogFilterMain                         m_LogFilterMain;
     ILogParser                            m_iLogParser;
     String                                m_strHighlight;
+    String                                m_strProcessShow;
     String                                m_strPidShow;
     String                                m_strTidShow;
     String                                m_strTagShow;
@@ -51,6 +52,7 @@ public class LogTable extends JTable implements FocusListener, ActionListener
         super(tablemodel);
         m_LogFilterMain = filterMain;
         m_strHighlight       = "";
+        m_strProcessShow     = "";
         m_strPidShow         = "";
         m_strTidShow         = "";
         m_strTagShow         = "";
@@ -118,7 +120,7 @@ public class LogTable extends JTable implements FocusListener, ActionListener
                         LogInfo logInfo = ((LogFilterTableModel)getModel()).getRow(row);
                         logInfo.m_bMarked = !logInfo.m_bMarked;
                         m_LogFilterMain.bookmarkItem(row, Integer.parseInt(logInfo.m_strLine) - 1, logInfo.m_bMarked);
-                     }
+                    }
                     else if(m_bAltPressed)
                     {
                         int colum = columnAtPoint(p);
@@ -187,6 +189,11 @@ public class LogTable extends JTable implements FocusListener, ActionListener
     String GetFilterRemove()
     {
         return m_strFilterRemove;
+    }
+
+    String GetFilterShowProcess()
+    {
+        return m_strProcessShow;
     }
 
     String GetFilterShowPid()
@@ -388,7 +395,7 @@ public class LogTable extends JTable implements FocusListener, ActionListener
     {
         return m_fFontSize;
     }
-    
+
     public int getColumnWidth(int nColumn)
     {
         return getColumnModel().getColumn(nColumn).getWidth();
@@ -432,6 +439,11 @@ public class LogTable extends JTable implements FocusListener, ActionListener
     void SetFilterShowTag(String strShowTag)
     {
         m_strTagShow = strShowTag;
+    }
+
+    void SetFilterShowProcess(String strShowProcess)
+    {
+        m_strProcessShow = strShowProcess;
     }
 
     void SetFilterShowPid(String strShowPid)
@@ -700,7 +712,7 @@ public class LogTable extends JTable implements FocusListener, ActionListener
         system = Toolkit.getDefaultToolkit().getSystemClipboard();
         system.setContents(stsel,stsel);
     }
-    
+
     public void setTagLength(int nLength)
     {
         if(m_nTagLength < nLength)
